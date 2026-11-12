@@ -1,0 +1,10 @@
+readr
+readxl
+dplyr
+tidyr
+stringr
+lubridate
+data.table
+ggplot2
+moonBook
+car
