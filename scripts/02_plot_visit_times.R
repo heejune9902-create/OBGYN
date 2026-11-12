@@ -2,12 +2,11 @@ source(file.path(if (file.exists("scripts/00_setup.R")) "." else "..", "scripts"
 
 if (!exists("weekly_visits_df")) stop("01_prepare_cohort.R을 먼저 실행하세요.")
 
-
 visit_times_df <- weekly_visits_df %>%
   mutate(time_diff = abs(difftime(complete_date.2, complete_date.1, units = "mins")),
          month = floor_date(application_date, unit = "month"))
 
-# 이전 환자 초진 완료일시 가져오기 (pre_pt_time)
+# 이전 환자 완료 시각
 visits_with_previous_completion_df <- visit_times_df %>% arrange(complete_date.1) %>%
   group_by(application_date) %>%
   mutate(pre_pt_time = lag(complete_date.1)) %>% ungroup()
@@ -21,7 +20,7 @@ visits_with_timestamps_df <- visits_with_previous_completion_df %>%
     complete_date.2 = as.POSIXct(complete_date.2, origin = "1970-01-01", tz = "UTC")
   )
 
-# 이전 초진 완료시간 판단 (pre_complete.1 = 이전 환자 초진완료시간 vs 본인 이전 경로 완료 시간)
+# 초진 소요시간의 기준 시각
 visits_with_time_reference_df <- visits_with_timestamps_df %>%
   rowwise() %>%
   mutate(
@@ -36,7 +35,7 @@ visits_with_time_reference_df$pre_complete.1 <- as.POSIXct(visits_with_time_refe
 visits_with_time_reference_df <- visits_with_time_reference_df %>% mutate(pre_complete.1 = if_else(is.na(pre_pt_time), complete_date.2, pre_complete.1))
 visits_with_time_reference_df %>% View()
 
-# 새로운 초진 시간 계산
+# 보정 소요시간 계산
 adjusted_visit_times_df <- visits_with_time_reference_df %>% mutate(
   new_time_diff = as.numeric(difftime(complete_date.1, pre_complete.1, units = "mins"))
 )
@@ -44,8 +43,7 @@ adjusted_visit_times_df <- visits_with_time_reference_df %>% mutate(
 adjusted_visit_times_df %>% View()
 mytable(mobile_re~age+new_time_diff, data = adjusted_visit_times_df)
 
-
-# 시간대별 환자 수
+# 시간대별 진료량
 visit_times_df <- adjusted_visit_times_df %>%
   mutate(year = year(application_time),
          month = month(application_time),
@@ -65,10 +63,8 @@ visit_times_df %>%
   group_by(day_of_week, hour) %>%
   summarise(count = n())
 
-
 years <- unique(monthly_counts_df$year)
 months <- unique(monthly_counts_df$month)
-
 
 for (y in years) {
   for (m in months) {
@@ -130,7 +126,7 @@ for (day in days_of_week) {
 weekly_visit_times_df <- visit_times_df %>% group_by(week_start, mobile_re) %>%
   summarise(mean_time = mean(new_time_diff, na.rm = TRUE), .groups = "drop")
 
-# 주 단위 그래프
+# 주별 평균 소요시간
 ggplot(weekly_visit_times_df, aes(x = week_start, y= mean_time, color = as.factor(mobile_re), group = mobile_re)) +
   geom_line()+
   geom_point() +
@@ -142,11 +138,10 @@ ggplot(weekly_visit_times_df, aes(x = week_start, y= mean_time, color = as.facto
                      labels = c("0" = "모바일 문진 미시행", "1" = "모바일 문진 시행")) +
   theme_minimal()
 
-
 monthly_visit_times_df <- visit_times_df %>% group_by(month_start, mobile_re) %>%
   summarise(mean_time = mean(new_time_diff, na.rm = TRUE), .groups = "drop")
 
-# 월 단위 그래프
+# 월별 평균 소요시간
 ggplot(monthly_visit_times_df, aes(x = month_start, y= mean_time, color = as.factor(mobile_re), group = mobile_re)) +
   geom_line()+
   geom_point() +
@@ -157,7 +152,6 @@ ggplot(monthly_visit_times_df, aes(x = month_start, y= mean_time, color = as.fac
   scale_color_manual(values = c("1" = "orange", "0" = "blue"),
                      labels = c("0" = "모바일 문진 미시행", "1" = "모바일 문진 시행")) +
   theme_minimal()
-
 
 weekly_visit_times_df <- visit_times_df %>% group_by(week_start, mobile_re) %>%
   summarise(mean_time = mean(new_time_diff, na.rm = TRUE),
@@ -173,7 +167,6 @@ weekly_outliers_df <- visit_times_df %>% left_join(weekly_visit_times_df, by = c
 ggplot(weekly_outliers_df, aes(x = week_start, y = ratio_out, fill = factor(mobile_re)))+
   geom_bar(stat = "identity",position = position_dodge(width = 0.8), color = "black")
 
-# 월 단위 그래프
 ggplot(weekly_visit_times_df, aes(x = week_start, y= mean_time, color = as.factor(mobile_re), group = mobile_re)) +
   geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper, fill = mobile_re), alpha = 0.2) +
   geom_line(size = 1.2)+
@@ -185,14 +178,13 @@ ggplot(weekly_visit_times_df, aes(x = week_start, y= mean_time, color = as.facto
        color = "mobile") +
   scale_color_manual(values = c("1" = "orange", "0" = "blue"),
                      labels = c("0" = "모바일 문진 미시행", "1" = "모바일 문진 시행")) +
-  #scale_x_datetime(breaks = weekly_visit_times_df$week_start)+
+
   scale_fill_manual(values = c('0' = "lightblue", '1' = "yellow"),
                     labels = c('0' = "모바일 문진 미시행", "1" = "모바일 문진 시행"))+
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-# 평균 초진 시간 그래프
-
+# 평균 초진 소요시간
 
 monthly_visit_times_df <- visit_times_df %>% group_by(month_start, mobile_re) %>%
   summarise(mean_time = mean(new_time_diff, na.rm = TRUE),
@@ -200,8 +192,6 @@ monthly_visit_times_df <- visit_times_df %>% group_by(month_start, mobile_re) %>
             ci_lower = mean_time - 1.96 *se,
             ci_upper = mean_time + 1.96* se, .groups = "drop")
 
-
-# 월 단위 그래프
 ggplot(monthly_visit_times_df, aes(x = month_start, y= mean_time, color = as.factor(mobile_re), group = mobile_re)) +
   geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper, fill = mobile_re), alpha = 0.2) +
   geom_line(size = 1.2)+

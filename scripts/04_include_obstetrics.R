@@ -32,11 +32,11 @@ standardized_visits_df <- visits_raw_df %>% rename(pt_id = `환자번호#1`,
 
 standardized_visits_df %>% names()
 standardized_visits_df <- standardized_visits_df %>% dplyr::select(-`진료과코드#31`, -'진료과코드#15', -'진료과명#32')
-standardized_visits_df %>% nrow() #16557
+standardized_visits_df %>% nrow()
 standardized_visits_df %>% summary()
 
 standardized_visits_df <- standardized_visits_df %>% filter(!is.na(complete_date.2))
-standardized_visits_df %>% nrow() #16549
+standardized_visits_df %>% nrow()
 
 # 18세 미만 제외
 adult_visits_df <- standardized_visits_df[!grepl("개월", standardized_visits_df$age),]
@@ -46,37 +46,33 @@ adult_visits_df$age <- adult_visits_df$age %>% as.numeric()
 adult_visits_df <- adult_visits_df[!is.na(adult_visits_df$age),]
 adult_visits_df <- adult_visits_df %>% filter(age >= 18)
 
-adult_visits_df %>% nrow() #16177
-
+adult_visits_df %>% nrow()
 
 eligible_visits_df <- adult_visits_df
-eligible_visits_df %>% nrow() #16177
-
+eligible_visits_df %>% nrow()
 
 eligible_visits_df$mobile %>% table()
 eligible_visits_df[is.na(eligible_visits_df$mobile),] %>% View()
 
-# 모바일 결측 제외
+# 문진 상태 결측 제외
 
 visits_with_mobile_status_df <- eligible_visits_df %>% filter(mobile != "")
 
 visits_with_mobile_status_df$mobile[visits_with_mobile_status_df$application_date %in% c("2023-05-24", "2024-02-17") & visits_with_mobile_status_df$mobile == "2/1"] <- "2/2"
 visits_with_mobile_status_df$mobile[visits_with_mobile_status_df$mobile == "2/1"] <- "2/0"
 
-visits_with_mobile_status_df %>% nrow() # 15564
+visits_with_mobile_status_df %>% nrow()
 
-# 모바일 1/1, 2/2 -> 1, 1/0, 2/0 -> 0 ------------------------------------------
+# 문진 상태를 시행 여부로 변환
 
 visits_with_mobile_status_df <- visits_with_mobile_status_df %>% mutate(mobile = ifelse(mobile %in% c("1/1", "2/2"), 1, 0))
 
-
-# 오후 외래 오전 접수 제외
+# 오후 예약의 오전 접수 제외
 visits_with_valid_registration_df <- visits_with_mobile_status_df %>% filter(!(reservated_time > "12:00" & application_time < "12:00"))
 
-visits_with_valid_registration_df %>% nrow() # 15273
+visits_with_valid_registration_df %>% nrow()
 
-
-#외국인 제거
+# 내국인 진료만 포함
 domestic_visits_df <- visits_with_valid_registration_df %>% filter(nat_cd == "KR" )
 
 domestic_visits_df %>% mutate(insurance_nm = ifelse(insurance_nm == "국제진료센터", insurance_nm, 0)) %>% mytable()
@@ -86,10 +82,10 @@ domestic_visits_df$insurance_nm[is.na(domestic_visits_df$insurance_nm)] <- 0
 
 domestic_visits_df$nat_cd %>% unique()
 
-domestic_visits_df %>% nrow() # 11626
+domestic_visits_df %>% nrow()
 
 # 최종작성일시 결측 제거
-## 모바일 문진 시행 조건 : 최종작성일시 <= 접수일시
+# 문진 완료 시각으로 시행군 재분류
 domestic_visits_df <- domestic_visits_df %>%
   mutate(application_time = as.POSIXct(paste(application_date, application_time), tz = "UTC"))
 
@@ -100,12 +96,11 @@ visits_with_exposure_df <- domestic_visits_df %>% mutate(mobile_re = if_else(mob
 
 visits_with_exposure_df$mobile_re %>% table()
 
-
 visits_with_previous_completion_df <- visits_with_exposure_df %>%
   mutate(time_diff = abs(difftime(complete_date.2, complete_date.1, units = "mins")),
          month = floor_date(application_date, unit = "month"))
 
-# 이전 환자 초진 완료일시 가져오기 (pre_pt_time)
+# 이전 환자 완료 시각
 visits_with_previous_completion_df <- visits_with_previous_completion_df %>% arrange(complete_date.1) %>%
   group_by(application_date) %>%
   mutate(pre_pt_time = lag(complete_date.1)) %>% ungroup()
@@ -117,7 +112,7 @@ visits_with_previous_completion_df <- visits_with_previous_completion_df %>%
     complete_date.2 = as.POSIXct(complete_date.2, origin = "1970-01-01", tz = "UTC")
   )
 
-# 이전 초진 완료시간 판단 (pre_complete.1 = 이전 환자 초진완료시간 vs 본인 이전 경로 완료 시간)
+# 초진 소요시간의 기준 시각
 visits_with_time_reference_df <- visits_with_previous_completion_df %>%
   rowwise() %>%
   mutate(
@@ -131,7 +126,7 @@ visits_with_time_reference_df <- visits_with_previous_completion_df %>%
 visits_with_time_reference_df$pre_complete.1 <- as.POSIXct(visits_with_time_reference_df$pre_complete.1,tz="UTC")
 visits_with_time_reference_df <- visits_with_time_reference_df %>% mutate(pre_complete.1 = if_else(is.na(pre_pt_time), complete_date.2, pre_complete.1))
 
-# 새로운 초진 시간 계산
+# 보정 소요시간 계산
 visits_with_adjusted_time_df <- visits_with_time_reference_df %>% mutate(
   new_time_diff = as.numeric(difftime(complete_date.1, pre_complete.1, units = "mins"))
 )
@@ -139,28 +134,27 @@ visits_with_adjusted_time_df <- visits_with_time_reference_df %>% mutate(
 visits_with_adjusted_time_df %>% View()
 mytable(mobile_re~age+new_time_diff, data = visits_with_adjusted_time_df)
 
-# 초진 작성 60분 이상 제외
+# 소요시간 60분 이상 제외
 
-#visits_with_exposure_df <- visits_with_exposure_df[abs(difftime(visits_with_exposure_df$complete_date.2, visits_with_exposure_df$complete_date.1, units = "hours"))<1,]
 analysis_visits_df <- visits_with_adjusted_time_df[abs(visits_with_adjusted_time_df$new_time_diff)<60,]
-analysis_visits_df %>% nrow() # 11620
+analysis_visits_df %>% nrow()
 
 analysis_visits_df$mobile_re <- analysis_visits_df$mobile_re %>% as.factor()
 
 analysis_visits_df %>% summary()
 
-# 주 단위 (월요일 기준)
+# 월요일 기준으로 주차 계산
 weekly_visits_df <- analysis_visits_df %>%
   mutate(week_start = floor_date(application_date, unit = "week", week_start = 1))
 
 weekly_visits_df %>% summary()
-weekly_visits_df %>% nrow() #11620
+weekly_visits_df %>% nrow()
 
 weekly_visit_counts_df <- weekly_visits_df %>% group_by(week_start) %>% summarise(count=n())%>% mutate(total = sum(count), percentage = count / total * 100)
 
 ggplot(weekly_visit_counts_df, aes(x = week_start, y = count)) +
   geom_col() +
-  #geom_text(aes(label = sprintf("%.2f%%", percentage)), vjust = -0.5) +
+
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 1, size = 10))
 
@@ -180,21 +174,20 @@ ggplot(monthly_visit_counts_df, aes(x = month, y = count)) +
   scale_x_datetime(breaks = monthly_visit_counts_df$month) +
   theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 1, size = 8))
 
-# 세 그룹간 비교 ---------------------------------------------------------------
+# 문진 완료 시점별 비교
 weekly_visits_df %>% colnames()
 
-# 그룹 1: 완전 미시행 (mobile = 0)
+# 문진 미시행
 no_questionnaire_df <- weekly_visits_df %>% filter(mobile == 0)
-no_questionnaire_df %>% nrow() #448
+no_questionnaire_df %>% nrow()
 
-# 그룹 2: 접수 후 모바일 완료 (mobile = 1 & fin_doc_dt >= application_time)
+# 접수 후 문진 완료
 post_registration_questionnaire_df <- weekly_visits_df %>% filter(mobile == 1 & fin_doc_dt >= application_time)
-post_registration_questionnaire_df %>% nrow() #3023
+post_registration_questionnaire_df %>% nrow()
 
-# 그룹 3: 시행 (mobile = 1 & fin_doc_dt < application_time)
+# 접수 전 문진 완료
 pre_registration_questionnaire_df <- weekly_visits_df %>% filter(mobile == 1 & fin_doc_dt < application_time)
-pre_registration_questionnaire_df %>% nrow() #8149
-
+pre_registration_questionnaire_df %>% nrow()
 
 nrow(no_questionnaire_df) + nrow(post_registration_questionnaire_df) + nrow(pre_registration_questionnaire_df)
 weekly_visits_df %>% nrow()
@@ -225,7 +218,7 @@ leveneTest(weekly_visits_df$new_time_diff, weekly_visits_df$group)
 aov(group~ age, data = weekly_visits_df)
 aov(group~ new_time_diff, data = weekly_visits_df)
 
-# 두 그룹 5분, 10분 이내 비율 --------------------------------------
+# 5분과 10분 이내 완료 비율
 
 weekly_visits_df %>%
   group_by(mobile_re) %>%

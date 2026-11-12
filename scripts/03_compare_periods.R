@@ -6,7 +6,6 @@ pre_introduction_raw_df <- readxl::read_excel(raw_file("산부인과-초진-2110
 
 combined_visits_df <- pre_introduction_raw_df %>% rbind(post_introduction_raw_df)
 
-
 standardized_visits_df <- combined_visits_df %>% rename(pt_id = `환자번호#1`,
                                application_date =`접수일자#2`,
                                dept_code = `외래존코드#3`,
@@ -34,7 +33,6 @@ standardized_visits_df <- combined_visits_df %>% rename(pt_id = `환자번호#1`
                                doc_status = '작성상태명#29',
                                fin_doc_dt = '최종작성일시#30')
 
-
 standardized_visits_df %>% names()
 standardized_visits_df <- standardized_visits_df %>% dplyr::select(-`진료과코드#31`, -'진료과코드#15', -'진료과명#32')
 
@@ -59,7 +57,7 @@ before_adult_visits_df$age <- before_adult_visits_df$age %>% as.numeric()
 before_adult_visits_df <- before_adult_visits_df[!is.na(before_adult_visits_df$age),]
 before_adult_visits_df <- before_adult_visits_df %>% filter(age >= 18)
 
-before_adult_visits_df %>% nrow() #5504
+before_adult_visits_df %>% nrow()
 
 after_adult_visits_df <- after_gynecology_visits_df[!grepl("개월", after_gynecology_visits_df$age),]
 after_adult_visits_df$age <- gsub('세', '', after_adult_visits_df$age)
@@ -68,20 +66,17 @@ after_adult_visits_df$age <- after_adult_visits_df$age %>% as.numeric()
 after_adult_visits_df <- after_adult_visits_df[!is.na(after_adult_visits_df$age),]
 after_adult_visits_df <- after_adult_visits_df %>% filter(age >= 18)
 
-after_adult_visits_df %>% nrow() #3921
+after_adult_visits_df %>% nrow()
 
-
-# 오후 외래 오전 접수 제외
+# 오후 예약의 오전 접수 제외
 before_valid_registration_visits_df <- before_adult_visits_df %>% filter(!(reservated_time > "12:00" & application_time < "12:00"))
 after_valid_registration_visits_df <- after_adult_visits_df %>% filter(!(reservated_time > "12:00" & application_time < "12:00"))
 
-
-#외국인 제거
+# 내국인 진료만 포함
 
 before_eligible_visits_df <- before_valid_registration_visits_df %>% filter(nat_cd == "KR" )
 before_eligible_visits_df <- before_eligible_visits_df %>%
   mutate(application_time = as.POSIXct(paste(application_date, application_time), tz = "UTC"))
-
 
 before_eligible_visits_df %>% mutate(insurance_nm = ifelse(insurance_nm == "국제진료센터", insurance_nm, 0))
 before_eligible_visits_df <- before_eligible_visits_df %>% filter(insurance_nm != "국제진료센터" | is.na(insurance_nm))
@@ -90,13 +85,11 @@ before_eligible_visits_df$insurance_nm[is.na(before_eligible_visits_df$insurance
 
 before_eligible_visits_df$nat_cd %>% unique()
 
-before_eligible_visits_df %>% nrow() #4107
+before_eligible_visits_df %>% nrow()
 
-#외국인 제거
 after_eligible_visits_df <- after_valid_registration_visits_df %>% filter(nat_cd == "KR" )
 after_eligible_visits_df <- after_eligible_visits_df %>%
   mutate(application_time = as.POSIXct(paste(application_date, application_time), tz = "UTC"))
-
 
 after_eligible_visits_df <- after_eligible_visits_df %>% filter(insurance_nm != "국제진료센터" | is.na(insurance_nm))
 after_eligible_visits_df$insurance_nm %>% unique()
@@ -104,7 +97,7 @@ after_eligible_visits_df$insurance_nm[is.na(after_eligible_visits_df$insurance_n
 
 after_eligible_visits_df$nat_cd %>% unique()
 
-after_eligible_visits_df %>% nrow() #3584
+after_eligible_visits_df %>% nrow()
 
 before_weekly_visits_df <- before_eligible_visits_df %>%
   mutate(week_start = floor_date(application_date, unit = "week", week_start = 1))
@@ -120,12 +113,11 @@ after_visit_times_df <- after_weekly_visits_df %>%
   mutate(time_diff = abs(difftime(complete_date.2, complete_date.1, units = "mins")),
          month = floor_date(application_date, unit = "month"))
 
-# 이전 환자 초진 완료일시 가져오기 (pre_pt_time)
+# 이전 환자 완료 시각
 before_visits_with_previous_completion_df <- before_visit_times_df %>% arrange(complete_date.1) %>%
   group_by(application_date) %>%
   mutate(pre_pt_time = lag(complete_date.1)) %>% ungroup()
 
-# 이전 환자 초진 완료일시 가져오기 (pre_pt_time)
 after_visits_with_previous_completion_df <- after_visit_times_df %>% arrange(complete_date.1) %>%
   group_by(application_date) %>%
   mutate(pre_pt_time = lag(complete_date.1)) %>% ungroup()
@@ -144,7 +136,7 @@ after_visits_with_timestamps_df <- after_visits_with_previous_completion_df %>%
     complete_date.2 = as.POSIXct(complete_date.2, origin = "1970-01-01", tz = "UTC")
   )
 
-# 이전 초진 완료시간 판단 (pre_complete.1 = 이전 환자 초진완료시간 vs 본인 이전 경로 완료 시간)
+# 초진 소요시간의 기준 시각
 before_visits_with_time_reference_df <- before_visits_with_timestamps_df %>%
   rowwise() %>%
   mutate(
@@ -155,7 +147,6 @@ before_visits_with_time_reference_df <- before_visits_with_timestamps_df %>%
     )
   ) %>% ungroup()
 
-# 이전 초진 완료시간 판단 (pre_complete.1 = 이전 환자 초진완료시간 vs 본인 이전 경로 완료 시간)
 after_visits_with_time_reference_df <- after_visits_with_timestamps_df %>%
   rowwise() %>%
   mutate(
@@ -174,30 +165,27 @@ after_visits_with_time_reference_df$pre_complete.1 <- as.POSIXct(after_visits_wi
 after_visits_with_time_reference_df <- after_visits_with_time_reference_df %>% mutate(pre_complete.1 = if_else(is.na(pre_pt_time), complete_date.2, pre_complete.1))
 mobile_time.3 %>% View()
 
-# 새로운 초진 시간 계산
+# 보정 소요시간 계산
 before_visits_with_adjusted_time_df <- before_visits_with_time_reference_df %>% mutate(
   new_time_diff = as.numeric(difftime(complete_date.1, pre_complete.1, units = "mins"))
 )
 
-# 새로운 초진 시간 계산
 after_visits_with_adjusted_time_df <- after_visits_with_time_reference_df %>% mutate(
   new_time_diff = as.numeric(difftime(complete_date.1, pre_complete.1, units = "mins"))
 )
 
-# 초진 작성 60분 이상 제외
+# 소요시간 60분 이상 제외
 
 before_visits_with_adjusted_time_df <- before_visits_with_adjusted_time_df[abs(before_visits_with_adjusted_time_df$new_time_diff)<60,]
-before_visits_with_adjusted_time_df %>% nrow() #4077
+before_visits_with_adjusted_time_df %>% nrow()
 
 before_visits_with_adjusted_time_df %>% summary()
 before_visits_with_adjusted_time_df %>% View()
-# 초진 작성 60분 이상 제외
 
 after_visits_with_adjusted_time_df <- after_visits_with_adjusted_time_df[abs(after_visits_with_adjusted_time_df$new_time_diff)<60,]
-after_visits_with_adjusted_time_df %>% nrow() #3552
+after_visits_with_adjusted_time_df %>% nrow()
 
 after_visits_with_adjusted_time_df %>% summary()
-
 
 ggplot(before_visits_with_adjusted_time_df, aes(x = new_time_diff))+
   geom_histogram(binwidth = 1, fill = "steelblue", color = "black")+
@@ -209,7 +197,7 @@ ggplot(after_visits_with_adjusted_time_df, aes(x = new_time_diff))+
   labs(title = "모바일 도입 후 초진 작성시간 분포", x = "초진 작성 시간", "환자 수")+
   theme_minimal()
 
-# 시간대 별 환자 수
+# 시간대별 진료량
 before_visits_with_adjusted_time_df$application_time <- before_visits_with_adjusted_time_df$application_time %>% as.POSIXct(tz = "UTC")
 before_visits_with_adjusted_time_df <- before_visits_with_adjusted_time_df %>%
   mutate(year = year(application_time),
@@ -242,7 +230,6 @@ ggplot(before_hourly_summary_df, aes(x = hour, y = mean_new_time_diff)) +
   labs(title = "모바일 도입 전 시간 별 평균 초진 작성 시간", x = "시간대", y = "평균 초진 작성 시간") +
   theme_minimal()
 
-# 시간대 별 환자 수
 after_visits_with_adjusted_time_df$application_date <- after_visits_with_adjusted_time_df$application_date %>% as.POSIXct()
 after_visits_with_adjusted_time_df <- after_visits_with_adjusted_time_df %>%
   mutate(year = year(application_time),
@@ -284,7 +271,6 @@ combined_adjusted_times_df$group <- combined_adjusted_times_df$group %>% as.fact
 mytable(group~age + new_time_diff, data= combined_adjusted_times_df)
 ?mytable()
 
-
 weekly_visit_times_df <- combined_adjusted_times_df %>% group_by(week_start, group) %>%
   summarise(mean_time = mean(new_time_diff, na.rm = TRUE),
             se = sd(new_time_diff) / sqrt(n()),
@@ -293,7 +279,7 @@ weekly_visit_times_df <- combined_adjusted_times_df %>% group_by(week_start, gro
 
 weekly_visit_times_df <- weekly_visit_times_df %>% group_by(group) %>% mutate(week_num = row_number()) %>% ungroup()
 
-# 주 단위 그래프
+# 주별 평균 소요시간
 ggplot(weekly_visit_times_df, aes(x = week_num, y= mean_time, color = as.factor(group), group = as.factor(group))) +
   geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper, fill = group), alpha = 0.2) +
   geom_line(size = 1.2)+
@@ -305,14 +291,13 @@ ggplot(weekly_visit_times_df, aes(x = week_num, y= mean_time, color = as.factor(
        color = "mobile") +
   scale_color_manual(values = c("2" = "orange", "1" = "blue"),
                      labels = c("1" = "모바일 문진 도입 전", "2" = "모바일 문진 도입 후")) +
-  #scale_x_datetime(breaks = weekly_visit_times_df$week_num)+
+
   scale_fill_manual(values = c('1' = "lightblue", '2' = "yellow"),
                     labels = c('1' = "모바일 문진 도입 전", "2" = "모바일 문진 도입 후"))+
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-# 평균 초진 시간 그래프
-
+# 평균 초진 소요시간
 
 monthly_visit_times_df <- combined_adjusted_times_df %>% group_by(month_start, group) %>%
   summarise(mean_time = mean(new_time_diff, na.rm = TRUE),
@@ -322,8 +307,7 @@ monthly_visit_times_df <- combined_adjusted_times_df %>% group_by(month_start, g
 
 monthly_visit_times_df <- monthly_visit_times_df %>% group_by(group) %>% mutate(week_num = row_number()) %>% ungroup()
 
-
-# 월 단위 그래프
+# 월별 평균 소요시간
 ggplot(monthly_visit_times_df, aes(x = month_start, y= mean_time, color = as.factor(group), group = as.factor(group))) +
   geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper, fill = group), alpha = 0.2) +
   geom_line(size = 1.2)+
@@ -341,7 +325,6 @@ ggplot(monthly_visit_times_df, aes(x = month_start, y= mean_time, color = as.fac
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-
 combined_adjusted_times_df %>% View()
 daily_visit_times_df <- combined_adjusted_times_df %>% group_by(day_of_week, group) %>%
   summarise(mean_time = mean(new_time_diff, na.rm = TRUE),
@@ -349,8 +332,7 @@ daily_visit_times_df <- combined_adjusted_times_df %>% group_by(day_of_week, gro
             ci_lower = mean_time - 1.96 *se,
             ci_upper = mean_time + 1.96* se, .groups = "drop")
 
-
-# 일 단위 그래프
+# 요일별 평균 소요시간
 ggplot(daily_visit_times_df, aes(x = day_of_week, y= mean_time, color = as.factor(group), group = as.factor(group))) +
   geom_line(size= 1.2) +
   geom_point()+
@@ -362,8 +344,7 @@ ggplot(daily_visit_times_df, aes(x = day_of_week, y= mean_time, color = as.facto
        color = "mobile") +
   scale_color_manual(values = c("2" = "orange", "1" = "blue"),
                      labels = c("1" = "모바일 문진 도입 전", "2" = "모바일 문진 도입 후")) +
-  #scale_x_datetime(breaks = monthly_visit_times_df$month_start)+
+
   scale_fill_manual(values = c('1' = "lightblue", '2' = "yellow"),
                     labels = c('1' = "모바일 문진 도입 전", "2" = "모바일 문진 도입 후"))+
   theme_minimal()
-  #theme(axis.text.x = element_text(angle = 45, hjust = 1))
